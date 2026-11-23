@@ -1,0 +1,56 @@
+name: Build Windows desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Pobierz projekt
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Zapisz numer wersji
+        shell: bash
+        env:
+        run: |
+          echo "{\"build\": $(git rev-list --count HEAD), \"sha\": \"${GITHUB_SHA::7}\"}" > build-info.json
+      - name: Skonfiguruj Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Zainstaluj zależności
+        run: npm ci
+      - name: Zbuduj aplikację na Windows
+        run: npm run desktop:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Instalator (zalecany)
+        uses: actions/upload-artifact@v7
+        with:
+          name: moj-plan-windows-installer
+          path: release/Moj-Plan-Setup-*.exe
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Wersja przenośna (bez instalacji)
+        uses: actions/upload-artifact@v7
+        with:
+          name: moj-plan-windows-portable
+          path: release/Moj-Plan-Portable-*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Opublikuj wydanie (aktualizacje w aplikacji)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="b$(git rev-list --count HEAD)"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Mój plan $tag" --notes "Automatyczne wydanie z commita ${GITHUB_SHA::7}" || true
+          gh release upload "$tag" release/Moj-Plan-Setup-*.exe release/Moj-Plan-Portable-*.exe --clobber

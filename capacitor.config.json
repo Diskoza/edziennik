@@ -1,0 +1,9 @@
+{
+  "appId": "pl.zsebydgoszcz.mojplan",
+  "appName": "Mój Plan",
+  "webDir": "dist",
+  "server": { "androidScheme": "http" },
+  "plugins": {
+    "Nodejs": { "nodeDir": "nodejs", "startMode": "auto" }
+  }
+}

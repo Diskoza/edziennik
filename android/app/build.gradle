@@ -1,0 +1,97 @@
+apply plugin: 'com.android.application'
+
+def releaseKeyReady = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+        .every { System.getenv(it)?.trim() }
+def stableKeystore = file('moj-plan.keystore')
+def stablePassword = System.getenv('MOJPLAN_KEYSTORE_PASSWORD') ?: project.findProperty('mojplanKeystorePassword')
+def stableKeyReady = stableKeystore.exists() && stablePassword
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger() + 100
+def appVersionName = System.getenv('GITHUB_RUN_NUMBER') ? "1.0.${buildNumber}" : '1.0'
+
+android {
+    namespace = "pl.zsebydgoszcz.mojplan"
+    compileSdk = rootProject.ext.compileSdkVersion
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk false
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    defaultConfig {
+        applicationId "pl.zsebydgoszcz.mojplan"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode buildNumber
+        versionName appVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        stable {
+            if (stableKeyReady) {
+                storeFile stableKeystore
+                storePassword stablePassword
+                keyAlias 'mojplan'
+                keyPassword stablePassword
+            }
+        }
+        release {
+            if (releaseKeyReady) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            if (stableKeyReady) {
+                signingConfig signingConfigs.stable
+            }
+        }
+        release {
+            signingConfig releaseKeyReady ? signingConfigs.release : (stableKeyReady ? signingConfigs.stable : signingConfigs.debug)
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

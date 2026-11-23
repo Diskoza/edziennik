@@ -1,0 +1,88 @@
+{
+  "name": "moj-plan",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build:mobile": "node scripts/build-mobile.mjs",
+    "android:sync": "npm run build:mobile && cap sync android",
+    "desktop": "electron .",
+    "desktop:build": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/clipboard": "^8.0.1",
+    "@capacitor/core": "^8.5.3",
+    "@capawesome/capacitor-nodejs": "^0.2.0",
+    "@peculiar/x509": "^2.2.0",
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "description": "Mój plan — dziennik ucznia ZSE Bydgoszcz (plan, zastępstwa, eduVULCAN)",
+  "author": "Mój plan",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "pl.zsebydgoszcz.mojplan.desktop",
+    "productName": "Mój plan",
+    "copyright": "Mój plan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "server.js",
+      "index.html",
+      "app.js",
+      "styles.css",
+      "mobile-theme.css",
+      "sw.js",
+      "manifest.webmanifest",
+      "build-info.json",
+      "icon.svg",
+      "icon-192.png",
+      "icon-512.png",
+      "icon-maskable-512.png",
+      "desktop/**",
+      "package.json",
+      "node_modules/**",
+      "!node_modules/@capacitor/**",
+      "!node_modules/@capawesome/**",
+      "!node_modules/.cache/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon-512.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Mój plan",
+      "artifactName": "Moj-Plan-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Moj-Plan-Portable-${version}.${ext}"
+    }
+  }
+}

@@ -1,0 +1,108 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobierz projekt
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Zapisz numer wersji
+        shell: bash
+        env:
+        run: |
+          echo "{\"build\": $(git rev-list --count HEAD), \"sha\": \"${GITHUB_SHA::7}\"}" > build-info.json
+      - name: Skonfiguruj Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Skonfiguruj JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Zainstaluj zależności
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci
+      - name: Przygotuj aplikację mobilną
+        run: npm run build:mobile
+      - name: Zsynchronizuj Capacitor z Androidem
+        run: npx cap sync android
+      - name: Przygotuj stały klucz podpisu
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_ALIAS" && -n "$ANDROID_KEY_PASSWORD" ]]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moj-plan-release.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/moj-plan-release.jks" >> "$GITHUB_ENV"
+            echo "ANDROID_SIGNED_RELEASE=true" >> "$GITHUB_ENV"
+            echo "Stały klucz podpisu skonfigurowany."
+          else
+            echo "ANDROID_SIGNED_RELEASE=false" >> "$GITHUB_ENV"
+            echo "Brak kompletu secrets podpisu — powstanie testowy APK debug."
+          fi
+      - name: Zbuduj APK
+        working-directory: android
+        env:
+          ANDROID_SIGNED_RELEASE: ${{ env.ANDROID_SIGNED_RELEASE }}
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "$ANDROID_SIGNED_RELEASE" = "true" ]; then ./gradlew assembleRelease; else ./gradlew assembleDebug; fi
+      - name: Przygotuj oddzielne pliki APK
+        env:
+          ANDROID_SIGNED_RELEASE: ${{ env.ANDROID_SIGNED_RELEASE }}
+        run: |
+          set -euo pipefail
+          variant=debug
+          if [ "$ANDROID_SIGNED_RELEASE" = "true" ]; then variant=release; fi
+          mkdir -p artifact-output
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "android/app/build/outputs/apk/$variant/app-$abi-$variant.apk" "artifact-output/moj-plan-$abi.apk"
+          done
+      - name: Udostępnij APK dla większości telefonów (ARM64)
+        uses: actions/upload-artifact@v7
+        with:
+          name: moj-plan-android-arm64
+          path: artifact-output/moj-plan-arm64-v8a.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Udostępnij APK dla starszych telefonów (ARMv7)
+        uses: actions/upload-artifact@v7
+        with:
+          name: moj-plan-android-armv7
+          path: artifact-output/moj-plan-armeabi-v7a.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Udostępnij APK dla emulatora (x86_64)
+        uses: actions/upload-artifact@v7
+        with:
+          name: moj-plan-android-x86_64
+          path: artifact-output/moj-plan-x86_64.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Opublikuj wydanie (aktualizacje w aplikacji)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="b$(git rev-list --count HEAD)"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Mój plan $tag" --notes "Automatyczne wydanie z commita ${GITHUB_SHA::7}" || true
+          gh release upload "$tag" artifact-output/moj-plan-arm64-v8a.apk --clobber
